@@ -3,5 +3,7 @@ src/canvas/tagore-canvas.c
 src/core/tagore-application.c
 src/file/tagore-recent-files.c
 src/image/tagore-image-loader.c
+src/processing/tagore-edit-engine.c
+src/processing/tagore-edit-state.c
 src/ui/tagore-window.c
 src/config/tagore-paths.c

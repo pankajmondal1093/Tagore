@@ -1,6 +1,7 @@
 #include "tagore/tagore-window.h"
 
 #include "tagore/tagore-canvas.h"
+#include "tagore/tagore-edit-engine.h"
 #include "tagore/tagore-image-loader.h"
 #include "tagore/tagore-recent-files.h"
 
@@ -9,6 +10,7 @@ struct _TagoreWindow
   AdwApplicationWindow parent_instance;
 
   TagoreCanvas *canvas;
+  TagoreEditEngine *edit_engine;
   TagoreRecentFiles *recent_files;
   GtkWidget *recent_box;
   GtkWidget *recent_menu_button;
@@ -104,13 +106,21 @@ tagore_window_open_file(TagoreWindow *self, GFile *file)
     return;
   }
 
-  tagore_canvas_set_texture(self->canvas, tagore_loaded_image_get_texture(image));
+  tagore_edit_engine_set_original_texture(self->edit_engine, tagore_loaded_image_get_texture(image));
   tagore_recent_files_add_file(self->recent_files, tagore_loaded_image_get_file(image));
   tagore_window_refresh_recent_files(self);
 
   basename = g_file_get_basename(file);
   if (basename != NULL)
     gtk_window_set_title(GTK_WINDOW(self), basename);
+}
+
+static void
+tagore_window_edit_engine_preview_changed(TagoreEditEngine *engine, gpointer user_data)
+{
+  GdkTexture *preview = tagore_edit_engine_get_preview_texture(engine);
+
+  tagore_canvas_set_texture(TAGORE_WINDOW(user_data)->canvas, preview);
 }
 
 static void
@@ -248,6 +258,42 @@ tagore_window_fullscreen_action(GSimpleAction *action, GVariant *parameter, gpoi
   self->fullscreen = !self->fullscreen;
 }
 
+static void
+tagore_window_rotate_left_action(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+  (void)action;
+  (void)parameter;
+
+  tagore_edit_engine_rotate_left(TAGORE_WINDOW(user_data)->edit_engine);
+}
+
+static void
+tagore_window_rotate_right_action(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+  (void)action;
+  (void)parameter;
+
+  tagore_edit_engine_rotate_right(TAGORE_WINDOW(user_data)->edit_engine);
+}
+
+static void
+tagore_window_flip_horizontal_action(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+  (void)action;
+  (void)parameter;
+
+  tagore_edit_engine_flip_horizontal(TAGORE_WINDOW(user_data)->edit_engine);
+}
+
+static void
+tagore_window_flip_vertical_action(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+  (void)action;
+  (void)parameter;
+
+  tagore_edit_engine_flip_vertical(TAGORE_WINDOW(user_data)->edit_engine);
+}
+
 static gboolean
 tagore_window_drop_cb(GtkDropTarget *target, const GValue *value, double x, double y, gpointer user_data)
 {
@@ -294,6 +340,25 @@ tagore_window_create_open_button(TagoreWindow *self)
   g_signal_connect(button, "clicked", G_CALLBACK(tagore_window_open_button_clicked), self);
 
   return button;
+}
+
+static GtkWidget *
+tagore_window_create_transform_menu(void)
+{
+  GtkWidget *menu_button = gtk_menu_button_new();
+  GMenu *menu = g_menu_new();
+
+  g_menu_append(menu, "Rotate Left", "win.rotate-left");
+  g_menu_append(menu, "Rotate Right", "win.rotate-right");
+  g_menu_append(menu, "Flip Horizontal", "win.flip-horizontal");
+  g_menu_append(menu, "Flip Vertical", "win.flip-vertical");
+
+  gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(menu_button), "object-rotate-right-symbolic");
+  gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(menu));
+  gtk_widget_set_tooltip_text(menu_button, "Transform Image");
+  g_object_unref(menu);
+
+  return menu_button;
 }
 
 static GtkWidget *
@@ -355,6 +420,10 @@ tagore_window_add_actions(TagoreWindow *self)
     { .name = "fit", .activate = tagore_window_fit_action },
     { .name = "actual-size", .activate = tagore_window_actual_size_action },
     { .name = "fullscreen", .activate = tagore_window_fullscreen_action },
+    { .name = "rotate-left", .activate = tagore_window_rotate_left_action },
+    { .name = "rotate-right", .activate = tagore_window_rotate_right_action },
+    { .name = "flip-horizontal", .activate = tagore_window_flip_horizontal_action },
+    { .name = "flip-vertical", .activate = tagore_window_flip_vertical_action },
   };
 
   g_action_map_add_action_entries(G_ACTION_MAP(self), actions, G_N_ELEMENTS(actions), self);
@@ -374,6 +443,10 @@ tagore_window_set_accelerators(TagoreWindow *self)
   gtk_application_set_accels_for_action(application, "win.fit", (const char *[]){"<Control>0", NULL});
   gtk_application_set_accels_for_action(application, "win.actual-size", (const char *[]){"<Control>1", NULL});
   gtk_application_set_accels_for_action(application, "win.fullscreen", (const char *[]){"F11", NULL});
+  gtk_application_set_accels_for_action(application, "win.rotate-right", (const char *[]){"<Control>r", NULL});
+  gtk_application_set_accels_for_action(application, "win.rotate-left", (const char *[]){"<Control><Shift>r", "<Control>l", NULL});
+  gtk_application_set_accels_for_action(application, "win.flip-horizontal", (const char *[]){"<Control>h", NULL});
+  gtk_application_set_accels_for_action(application, "win.flip-vertical", (const char *[]){"<Control><Shift>h", NULL});
 }
 
 static void
@@ -382,6 +455,7 @@ tagore_window_dispose(GObject *object)
   TagoreWindow *self = TAGORE_WINDOW(object);
 
   g_clear_object(&self->recent_files);
+  g_clear_object(&self->edit_engine);
 
   G_OBJECT_CLASS(tagore_window_parent_class)->dispose(object);
 }
@@ -397,10 +471,16 @@ tagore_window_init(TagoreWindow *self)
   GtkWidget *fit_button = tagore_window_create_icon_button("win.fit", "zoom-fit-best-symbolic", "Fit to Window");
   GtkWidget *actual_size_button = tagore_window_create_icon_button("win.actual-size", "zoom-original-symbolic", "Actual Size");
   GtkWidget *fullscreen_button = tagore_window_create_icon_button("win.fullscreen", "view-fullscreen-symbolic", "Fullscreen");
+  GtkWidget *rotate_left_button = tagore_window_create_icon_button("win.rotate-left", "object-rotate-left-symbolic", "Rotate Left");
+  GtkWidget *rotate_right_button = tagore_window_create_icon_button("win.rotate-right", "object-rotate-right-symbolic", "Rotate Right");
+  GtkWidget *flip_horizontal_button = tagore_window_create_icon_button("win.flip-horizontal", "object-flip-horizontal-symbolic", "Flip Horizontal");
+  GtkWidget *flip_vertical_button = tagore_window_create_icon_button("win.flip-vertical", "object-flip-vertical-symbolic", "Flip Vertical");
+  GtkWidget *transform_menu_button = tagore_window_create_transform_menu();
   GtkWidget *status_bar = NULL;
   GtkDropTarget *drop_target = NULL;
 
   self->recent_files = tagore_recent_files_new();
+  self->edit_engine = tagore_edit_engine_new();
   self->canvas = TAGORE_CANVAS(tagore_canvas_new());
   self->recent_menu_button = tagore_window_create_recent_menu(self);
   status_bar = tagore_window_create_status_bar(self);
@@ -415,7 +495,12 @@ tagore_window_init(TagoreWindow *self)
   adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), zoom_in_button);
   adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), fit_button);
   adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), actual_size_button);
+  adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), rotate_left_button);
+  adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), rotate_right_button);
+  adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), flip_horizontal_button);
+  adw_header_bar_pack_start(ADW_HEADER_BAR(header_bar), flip_vertical_button);
   adw_header_bar_pack_end(ADW_HEADER_BAR(header_bar), self->recent_menu_button);
+  adw_header_bar_pack_end(ADW_HEADER_BAR(header_bar), transform_menu_button);
   adw_header_bar_pack_end(ADW_HEADER_BAR(header_bar), fullscreen_button);
 
   adw_toolbar_view_add_top_bar(ADW_TOOLBAR_VIEW(toolbar_view), header_bar);
@@ -428,6 +513,7 @@ tagore_window_init(TagoreWindow *self)
   g_signal_connect(drop_target, "drop", G_CALLBACK(tagore_window_drop_cb), self);
   gtk_widget_add_controller(GTK_WIDGET(self->canvas), GTK_EVENT_CONTROLLER(drop_target));
   g_signal_connect(self->canvas, "zoom-changed", G_CALLBACK(tagore_window_canvas_zoom_changed), self);
+  g_signal_connect(self->edit_engine, "preview-changed", G_CALLBACK(tagore_window_edit_engine_preview_changed), self);
 
   tagore_window_refresh_recent_files(self);
   tagore_window_update_zoom_label(self, tagore_canvas_get_zoom(self->canvas));

@@ -42,6 +42,17 @@ Loading, decoding, processing, transforms, adjustments, metadata extraction,
 canvas rendering, and exporting are separated so that each concern can evolve
 independently.
 
+### Editing Pipeline
+
+Editing is non-destructive. The original image remains immutable while
+`TagoreEditState` stores operations such as rotation, flip, crop, resize, and
+adjustments. `TagoreEditEngine` renders a preview texture from the original plus
+that state and notifies the UI through signals.
+
+GTK widgets dispatch actions to the engine; they do not modify pixels directly.
+Save and export will later consume the same edit state to write modified pixels
+to disk.
+
 ### Platform Integration
 
 Configuration, cache, user data, logging, recent files, native file choosers,

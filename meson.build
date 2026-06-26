@@ -46,6 +46,8 @@ tagore_sources = files(
   'src/core/tagore-application.c',
   'src/file/tagore-recent-files.c',
   'src/image/tagore-image-loader.c',
+  'src/processing/tagore-edit-engine.c',
+  'src/processing/tagore-edit-state.c',
   'src/ui/tagore-window.c',
   'src/config/tagore-paths.c',
 )
@@ -83,5 +85,30 @@ test_recent_files = executable(
 )
 
 test('recent files', test_recent_files)
+
+test_edit_state = executable(
+  'test-edit-state',
+  files(
+    'tests/test-edit-state.c',
+    'src/processing/tagore-edit-state.c',
+  ),
+  dependencies: tagore_core_deps,
+  include_directories: tagore_inc,
+)
+
+test('edit state', test_edit_state)
+
+test_edit_engine = executable(
+  'test-edit-engine',
+  files(
+    'tests/test-edit-engine.c',
+    'src/processing/tagore-edit-engine.c',
+    'src/processing/tagore-edit-state.c',
+  ),
+  dependencies: tagore_deps + tagore_core_deps,
+  include_directories: tagore_inc,
+)
+
+test('edit engine', test_edit_engine)
 
 subdir('po')

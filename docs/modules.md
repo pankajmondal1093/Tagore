@@ -157,6 +157,38 @@ processing-specific image models to be added later.
 Processing coordinates backend-neutral pixel operations. GEGL, OpenCV, and
 libvips adapters should remain replaceable.
 
+## Editing Engine
+
+### Why It Exists
+
+The editing engine provides the non-destructive foundation for every image
+modification feature.
+
+### Responsibilities
+
+- Own the immutable original image for the current editing session.
+- Own non-destructive edit state.
+- Render live preview textures from original image plus state.
+- Notify the UI when the preview changes.
+- Keep editing logic out of GTK widgets.
+
+### Public APIs
+
+- `TagoreEditState`: plain state for rotation, flip, crop, resize, and
+  adjustments.
+- `TagoreEditEngine`: GObject service for preview rendering.
+- Transform methods for rotate left/right and flip horizontal/vertical.
+
+### Dependencies
+
+The initial preview renderer depends on GTK/GDK texture APIs. The state module
+depends only on GLib/GObject types.
+
+### Future Extensibility
+
+The renderer can later move to libvips, OpenCV, GEGL, GPU render nodes, or a
+tiled processing graph without changing UI actions or canvas rendering.
+
 ## Transform Engine
 
 Transforms cover rotate, flip, crop, and resize. They should be represented as
